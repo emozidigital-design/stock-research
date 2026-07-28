@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchYahooChart, YahooFinanceError, type YahooRange } from "@/lib/yahoo-finance";
 import { buildLiveMarketData } from "@/lib/technicals";
 import { stocks } from "@/lib/mock-data";
+import { fetchSymbolMaster } from "@/lib/symbol-master";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ symb
   const { searchParams } = new URL(request.url);
   const range = (searchParams.get("range") ?? "1y") as YahooRange;
 
-  // No symbol-master/search index exists yet (top-strip.tsx's search is scoped
-  // to the same fixed list), so allowlisting against it avoids forwarding
-  // arbitrary strings to Yahoo.
-  const known = stocks.some((s) => s.symbol === symbol);
+  // Allowlist against the full NSE symbol master (not just the watchlist) so
+  // searched-but-not-hardcoded stocks can still get live data, while still
+  // avoiding forwarding arbitrary strings to Yahoo.
+  const isWatchlisted = stocks.some((s) => s.symbol === symbol);
+  const known = isWatchlisted || (await fetchSymbolMaster().then(
+    (entries) => entries.some((e) => e.symbol === symbol),
+    () => false
+  ));
   if (!known) {
     return NextResponse.json({ error: `Unknown symbol: ${symbol}` }, { status: 404 });
   }

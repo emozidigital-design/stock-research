@@ -5,30 +5,75 @@ import { Search, X } from "lucide-react";
 import { indices, stocks } from "@/lib/mock-data";
 import { fmtNum, fmtPct, fmtSigned, fmtTimeIST, isMarketOpen } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Stock } from "@/types/stock";
+
+interface SearchResult {
+  symbol: string;
+  name: string;
+  exchange?: string;
+  inWatchlist: boolean;
+}
 
 export function TopStrip({
   onSelect,
+  onSelectSearch,
   lastSync,
   isStale = false,
 }: {
   onSelect: (symbol: string) => void;
+  onSelectSearch: (symbol: string, name: string) => void;
   lastSync: Date | null;
   isStale?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [remoteResults, setRemoteResults] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const marketOpen = lastSync !== null && isMarketOpen(lastSync);
 
-  const results = useMemo<Stock[]>(() => {
+  // Instant match against the 18-stock watchlist — zero-latency for the
+  // common case, no network round-trip needed for what's already in memory.
+  const watchlistResults = useMemo<SearchResult[]>(() => {
     if (!query.trim()) return [];
     const q = query.trim().toUpperCase();
-    return stocks.filter((s) => s.symbol.includes(q) || s.name.toUpperCase().includes(q)).slice(0, 8);
+    return stocks
+      .filter((s) => s.symbol.includes(q) || s.name.toUpperCase().includes(q))
+      .map((s) => ({ symbol: s.symbol, name: s.name, exchange: s.exchange, inWatchlist: true }));
   }, [query]);
 
-  const inWatchlist = (symbol: string) => stocks.some((s) => s.symbol === symbol);
+  // Debounced server search covers the full ~2,400-symbol NSE universe;
+  // merged with (and de-duplicated against) the instant watchlist matches.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setRemoteResults([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/symbols/search?q=${encodeURIComponent(q)}`);
+        const json = await res.json();
+        if (cancelled) return;
+        const watchlistSymbols = new Set(stocks.map((s) => s.symbol));
+        const entries: SearchResult[] = (json.results ?? [])
+          .filter((r: { symbol: string }) => !watchlistSymbols.has(r.symbol))
+          .map((r: { symbol: string; name: string }) => ({ symbol: r.symbol, name: r.name, inWatchlist: false }));
+        setRemoteResults(entries);
+      } catch {
+        if (!cancelled) setRemoteResults([]);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const results = useMemo<SearchResult[]>(
+    () => [...watchlistResults, ...remoteResults].slice(0, 8),
+    [watchlistResults, remoteResults]
+  );
 
   const closeSearch = () => {
     setSearchOpen(false);
@@ -166,30 +211,24 @@ export function TopStrip({
               {results.length === 0 ? (
                 <div className="px-2 py-3 text-center text-[10.5px] text-text3">No matches for &quot;{query}&quot;</div>
               ) : (
-                <>
-                  {results.map((s) => (
-                    <div
-                      key={s.symbol}
-                      onClick={() => {
-                        onSelect(s.symbol);
-                        closeSearch();
-                      }}
-                      className="flex cursor-pointer items-center justify-between rounded-[3px] px-2 py-[7px] text-[11px] hover:bg-accent"
-                    >
-                      <span>
-                        <b className="font-bold">{s.symbol}</b> <span className="text-text3">{s.name}</span>
-                      </span>
-                      <span className="rounded-[2px] border border-border px-1 text-[8px] font-bold text-text3">
-                        {s.exchange}
-                      </span>
-                    </div>
-                  ))}
-                  {!inWatchlist(results[0]?.symbol) && (
-                    <div className="mt-1 border-t border-border px-2 pt-1.5 text-[9px] text-text3">
-                      Full NSE/BSE universe search
-                    </div>
-                  )}
-                </>
+                results.map((s) => (
+                  <div
+                    key={s.symbol}
+                    onClick={() => {
+                      if (s.inWatchlist) onSelect(s.symbol);
+                      else onSelectSearch(s.symbol, s.name);
+                      closeSearch();
+                    }}
+                    className="flex cursor-pointer items-center justify-between rounded-[3px] px-2 py-[7px] text-[11px] hover:bg-accent"
+                  >
+                    <span>
+                      <b className="font-bold">{s.symbol}</b> <span className="text-text3">{s.name}</span>
+                    </span>
+                    <span className="rounded-[2px] border border-border px-1 text-[8px] font-bold text-text3">
+                      {s.exchange ?? "NSE"}
+                    </span>
+                  </div>
+                ))
               )}
             </div>
           )}

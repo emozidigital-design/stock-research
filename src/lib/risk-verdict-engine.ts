@@ -50,7 +50,8 @@ export function computeRiskFlags(stock: Stock): ComputedRiskFlag[] {
   }
 
   if (!stock.above200dma) {
-    flags.push(flag("trend200", "high", "high", "med", "Below 200 DMA", `Long-term trend caution — watch ${stock.support[0]} support.`));
+    const supportNote = stock.support[0] != null ? `watch ${stock.support[0]} support` : "no support level available";
+    flags.push(flag("trend200", "high", "high", "med", "Below 200 DMA", `Long-term trend caution — ${supportNote}.`));
   }
   if (stock.rsi14 >= 70) {
     flags.push(flag("rsi-overbought", "med", "med", "med", "RSI overbought", `RSI(14) at ${stock.rsi14.toFixed(1)} — pullback risk near-term.`));

@@ -9,6 +9,17 @@ import { cn } from "@/lib/utils";
 
 export function BoxFundamentals({ stock }: { stock: Stock }) {
   const [expanded, setExpanded] = useState(false);
+
+  if (stock.quarters.length === 0) {
+    return (
+      <Panel title="Fundamentals · Last 4Q">
+        <div className="flex h-full items-center justify-center text-center text-[10.5px] text-text3">
+          No quarterly data available.
+        </div>
+      </Panel>
+    );
+  }
+
   const pats = stock.quarters.map((q) => q.pat);
   const minPat = Math.min(...pats);
   const maxPat = Math.max(...pats);

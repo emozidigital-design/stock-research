@@ -186,6 +186,20 @@ export async function fetchYahooQuarters(symbol: string): Promise<QuarterlyFinan
   return quarters;
 }
 
+export interface FundamentalsWithQuarters extends YahooFundamentals {
+  symbol: string;
+  quarters: QuarterlyFinancial[];
+}
+
+/** Ratios + quarters for one symbol, quarters isolated so their failure doesn't discard otherwise-successful ratio data. */
+export async function fetchYahooFundamentalsWithQuarters(symbol: string): Promise<FundamentalsWithQuarters> {
+  const [fundamentals, quarters] = await Promise.all([
+    fetchYahooFundamentals(symbol),
+    fetchYahooQuarters(symbol).catch(() => [] as QuarterlyFinancial[]),
+  ]);
+  return { symbol, ...fundamentals, quarters };
+}
+
 interface RecommendationTrendBucket {
   strongBuy?: number;
   buy?: number;

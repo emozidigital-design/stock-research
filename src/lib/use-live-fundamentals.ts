@@ -57,6 +57,58 @@ export function useLiveFundamentals() {
 }
 
 /**
+ * Single-symbol counterpart to useLiveFundamentals, for stocks selected via
+ * search that aren't in the watchlist (the batch route/hook only ever covers
+ * the watchlist array). Pass `enabled: false` to skip fetching entirely.
+ */
+export function useLiveSymbolFundamentals(symbol: string, enabled: boolean) {
+  const [fundamentals, setFundamentals] = useState<FundamentalsQuote | null>(null);
+  const inFlight = useRef(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setFundamentals(null);
+      return;
+    }
+    let cancelled = false;
+
+    async function poll() {
+      if (inFlight.current) return;
+      if (document.visibilityState === "hidden") return;
+      inFlight.current = true;
+      try {
+        const res = await fetch(`/api/fundamentals/${symbol}`);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const json = await res.json();
+        if (cancelled) return;
+        setFundamentals(json.fundamentals as FundamentalsQuote);
+      } catch {
+        // keep last-known-good fundamentals on failure
+      } finally {
+        inFlight.current = false;
+      }
+    }
+
+    setFundamentals(null);
+    poll();
+    const interval = setInterval(poll, POLL_MS);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [symbol, enabled]);
+
+  return fundamentals;
+}
+
+/**
  * Merges a fundamentals quote onto a base Stock, field by field — a partial
  * Yahoo response (e.g. a null ROE) must never overwrite a good mock value
  * with null/NaN, so each field only applies when the live value is present.
