@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getStock } from "@/lib/mock-data";
 import { useLiveQuote } from "@/lib/use-live-quote";
+import { useLiveFundamentals, mergeFundamentals } from "@/lib/use-live-fundamentals";
 import { cn } from "@/lib/utils";
 import type { Stock } from "@/types/stock";
 import { TopStrip } from "./top-strip";
@@ -30,7 +31,9 @@ export function Dashboard() {
   // Fixed "1M" range for the header/technicals overlay — independent from
   // BoxChart's own range-following poll of the same route (see box-chart.tsx).
   const { live, error, lastFetchedAt } = useLiveQuote(selectedSymbol, "1M");
-  const stock: Stock = live ? { ...baseStock, ...live } : baseStock;
+  const liveFundamentals = useLiveFundamentals();
+  const priceStock: Stock = live ? { ...baseStock, ...live } : baseStock;
+  const stock: Stock = mergeFundamentals(priceStock, liveFundamentals.get(selectedSymbol));
   const isStale = error !== null;
 
   useEffect(() => {

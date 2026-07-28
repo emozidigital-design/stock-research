@@ -5,7 +5,9 @@ import { stocks } from "@/lib/mock-data";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { computeRiskFlags, computeVerdict } from "@/lib/risk-verdict-engine";
-import type { Verdict } from "@/types/stock";
+import { useLiveWatchlist } from "@/lib/use-live-watchlist";
+import { useLiveFundamentals, mergeFundamentals } from "@/lib/use-live-fundamentals";
+import type { Stock, Verdict } from "@/types/stock";
 
 type FilterKey = "all" | "fo" | "flagged";
 
@@ -18,25 +20,39 @@ export function WatchlistSidebar({
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sortDesc, setSortDesc] = useState(true);
+  const liveQuotes = useLiveWatchlist();
+  const liveFundamentals = useLiveFundamentals();
+
+  // Live price/%chg and fundamentals win per symbol/field; mock stays the
+  // fallback until the first successful poll lands (mirrors dashboard.tsx's
+  // merge pattern). Fundamentals merge is field-level via mergeFundamentals
+  // so a partial Yahoo response never overwrites a good mock value.
+  const liveStocks = useMemo<Stock[]>(() => {
+    return stocks.map((s) => {
+      const live = liveQuotes.get(s.symbol);
+      const withPrice = live ? { ...s, cmp: live.cmp, changeAbs: live.changeAbs, changePct: live.changePct } : s;
+      return mergeFundamentals(withPrice, liveFundamentals.get(s.symbol));
+    });
+  }, [liveQuotes, liveFundamentals]);
 
   const riskBySymbol = useMemo(() => {
     const map = new Map<string, boolean>();
-    for (const s of stocks) map.set(s.symbol, computeRiskFlags(s).some((r) => r.severity !== "low"));
+    for (const s of liveStocks) map.set(s.symbol, computeRiskFlags(s).some((r) => r.severity !== "low"));
     return map;
-  }, []);
+  }, [liveStocks]);
 
   const verdictBySymbol = useMemo(() => {
     const map = new Map<string, Verdict>();
-    for (const s of stocks) map.set(s.symbol, computeVerdict(s).verdict);
+    for (const s of liveStocks) map.set(s.symbol, computeVerdict(s).verdict);
     return map;
-  }, []);
+  }, [liveStocks]);
 
   const filtered = useMemo(() => {
-    let list = stocks;
+    let list = liveStocks;
     if (filter === "fo") list = list.filter((s) => s.isFo);
     if (filter === "flagged") list = list.filter((s) => riskBySymbol.get(s.symbol) || s.news.length > 0);
     return [...list].sort((a, b) => (sortDesc ? b.changePct - a.changePct : a.changePct - b.changePct));
-  }, [filter, sortDesc, riskBySymbol]);
+  }, [liveStocks, filter, sortDesc, riskBySymbol]);
 
   return (
     <div className="flex flex-col overflow-hidden rounded-[4px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,0.04)]">

@@ -4,13 +4,13 @@ import { useMemo, useState } from "react";
 import type { Stock } from "@/types/stock";
 import { Panel } from "./panel";
 import { TableModal } from "./table-modal";
+import { InteractiveChart, type Candle } from "./interactive-chart";
 import { cn } from "@/lib/utils";
 import { fmtNum } from "@/lib/format";
 import { useLiveQuote, type ChartRangeKey } from "@/lib/use-live-quote";
 import type { OhlcvBar } from "@/lib/yahoo-finance";
 
 const RANGES: ChartRangeKey[] = ["1D", "1M", "6M", "1Y", "5Y"];
-type Candle = { up: boolean; hi: number; lo: number; open: number; close: number };
 
 // Deterministic pseudo-random candles seeded from the stock symbol — used as
 // a fallback when real data isn't available yet (cold-start fetch failure,
@@ -26,30 +26,22 @@ function seededCandles(symbol: string, count: number): Candle[] {
 
   const candles: Candle[] = [];
   let level = 60;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const dayInSec = 86400;
   for (let i = 0; i < count; i++) {
     const drift = (rand() - 0.42) * 14;
     const open = level;
     const close = Math.max(8, Math.min(100, level + drift));
     const hi = Math.max(open, close) + rand() * 6;
     const lo = Math.min(open, close) - rand() * 6;
-    candles.push({ up: close >= open, hi, lo, open, close });
+    candles.push({ up: close >= open, hi, lo, open, close, t: nowSec - (count - i) * dayInSec });
     level = close;
   }
   return candles;
 }
 
 function barsToCandles(bars: OhlcvBar[]): Candle[] {
-  return bars.map((b) => ({ up: b.close >= b.open, hi: b.high, lo: b.low, open: b.open, close: b.close }));
-}
-
-function smooth(values: number[], alpha: number): number[] {
-  const out: number[] = [];
-  let prev = values[0];
-  for (const v of values) {
-    prev = alpha * v + (1 - alpha) * prev;
-    out.push(prev);
-  }
-  return out;
+  return bars.map((b) => ({ up: b.close >= b.open, hi: b.high, lo: b.low, open: b.open, close: b.close, t: b.t }));
 }
 
 export function BoxChart({ stock }: { stock: Stock }) {
@@ -78,7 +70,7 @@ export function BoxChart({ stock }: { stock: Stock }) {
             <div className="px-1 pb-1 text-[9px] text-text3">Intraday view — placeholder data</div>
           )}
           <div className="relative min-h-[120px] flex-1">
-            <CandleChart candles={candles} loading={!isPlaceholderRange && loading && bars.length === 0} />
+            <InteractiveChart candles={candles} loading={!isPlaceholderRange && loading && bars.length === 0} />
           </div>
         </div>
       </Panel>
@@ -89,7 +81,7 @@ export function BoxChart({ stock }: { stock: Stock }) {
           <div className="pb-1 pt-1 text-[9.5px] text-text3">Intraday view — placeholder data (real-time 1D not yet wired)</div>
         )}
         <div className="relative mt-2 h-[280px]">
-          <CandleChart candles={candles} loading={!isPlaceholderRange && loading && bars.length === 0} />
+          <InteractiveChart candles={candles} loading={!isPlaceholderRange && loading && bars.length === 0} />
         </div>
         <OhlcSummary candles={candles} />
       </TableModal>
@@ -122,55 +114,6 @@ function RangeTabs({
         </button>
       ))}
     </div>
-  );
-}
-
-function CandleChart({ candles, loading = false }: { candles: Candle[]; loading?: boolean }) {
-  const w = 400;
-  const h = 130;
-  const step = w / candles.length;
-  const domainMin = Math.min(...candles.map((c) => c.lo));
-  const domainMax = Math.max(...candles.map((c) => c.hi));
-  const domainRange = domainMax - domainMin || 1;
-  // Real bars are in actual rupee units (unlike the old fake 0-100 scale), so
-  // the Y domain must track the current batch's real price range.
-  const scaleY = (v: number) => h - ((v - domainMin) / domainRange) * h;
-  const ema20 = useMemo(() => smooth(candles.map((c) => c.close), 0.15), [candles]);
-  const ema50 = useMemo(() => smooth(candles.map((c) => c.close), 0.08), [candles]);
-
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("h-full w-full", loading && "opacity-50")}>
-      {[0.15, 0.38, 0.62, 0.85].map((f) => (
-        <line key={f} x1={0} y1={h * f} x2={w} y2={h * f} stroke="#F0F1F3" strokeWidth={1} />
-      ))}
-      <polyline
-        points={ema20.map((v, i) => `${i * step + step / 2},${scaleY(v)}`).join(" ")}
-        fill="none"
-        stroke="#1A56DB"
-        strokeWidth={1.2}
-        opacity={0.55}
-      />
-      <polyline
-        points={ema50.map((v, i) => `${i * step + step / 2},${scaleY(v)}`).join(" ")}
-        fill="none"
-        stroke="#F2A600"
-        strokeWidth={1.2}
-        opacity={0.55}
-      />
-      {candles.map((c, i) => {
-        const x = i * step + step / 2;
-        const bw = Math.max(2, step * 0.55);
-        const color = c.up ? "#0F9D58" : "#D93025";
-        const bodyTop = scaleY(Math.max(c.open, c.close));
-        const bodyBot = scaleY(Math.min(c.open, c.close));
-        return (
-          <g key={i}>
-            <line x1={x} y1={scaleY(c.hi)} x2={x} y2={scaleY(c.lo)} stroke={color} strokeWidth={1} />
-            <rect x={x - bw / 2} y={bodyTop} width={bw} height={Math.max(1, bodyBot - bodyTop)} fill={color} />
-          </g>
-        );
-      })}
-    </svg>
   );
 }
 
