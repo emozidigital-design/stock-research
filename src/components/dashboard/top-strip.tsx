@@ -12,13 +12,13 @@ export function TopStrip({
   lastSync,
 }: {
   onSelect: (symbol: string) => void;
-  lastSync: Date;
+  lastSync: Date | null;
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const marketOpen = isMarketOpen(lastSync);
+  const marketOpen = lastSync !== null && isMarketOpen(lastSync);
 
   const results = useMemo<Stock[]>(() => {
     if (!query.trim()) return [];
@@ -105,9 +105,19 @@ export function TopStrip({
         {/* Right: sync time + search icon, grouped as one grid item */}
         <div className="order-2 ml-auto flex shrink-0 items-center gap-2.5 lg:order-none lg:ml-0">
           <div className="hidden whitespace-nowrap text-right text-[10.5px] leading-tight text-text2 xs:block">
-            Last sync <b className="font-semibold text-foreground">{fmtTimeIST(lastSync.toISOString())} IST</b>
-            <br />
-            {lastSync.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+            {lastSync ? (
+              <>
+                Last sync <b className="font-semibold text-foreground">{fmtTimeIST(lastSync.toISOString())} IST</b>
+                <br />
+                {lastSync.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+              </>
+            ) : (
+              <>
+                Last sync <b className="font-semibold text-foreground">—</b>
+                <br />
+                &nbsp;
+              </>
+            )}
           </div>
           <button
             onClick={() => setSearchOpen((v) => !v)}

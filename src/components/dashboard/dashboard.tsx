@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getStock } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { TopStrip } from "./top-strip";
@@ -19,9 +19,15 @@ type MobileTab = (typeof MOBILE_TABS)[number][0];
 
 export function Dashboard() {
   const [selectedSymbol, setSelectedSymbol] = useState("RELIANCE");
-  const [lastSync] = useState(() => new Date());
+  // Seeded client-side only — computing this during render would produce a
+  // different value on the prerendered pass vs. hydration, triggering a mismatch.
+  const [lastSync, setLastSync] = useState<Date | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("overview");
   const stock = getStock(selectedSymbol);
+
+  useEffect(() => {
+    setLastSync(new Date());
+  }, []);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">

@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Reference copy of the rules applied via Firebase Console → Firestore → Rules tab.
+// The Admin SDK (server-side API routes) bypasses these rules entirely — this only
+// governs direct browser access via the client SDK (src/lib/firebase-client.ts).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // News feed: public read (dashboard has no auth yet), no client writes —
+    // all writes go through the /api/cron/fetch-news route via the Admin SDK.
+    match /news/{newsId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Everything else stays locked down until its own phase defines rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
