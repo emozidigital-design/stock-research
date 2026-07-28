@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { getStock } from "@/lib/mock-data";
+import { useLiveQuote } from "@/lib/use-live-quote";
 import { cn } from "@/lib/utils";
+import type { Stock } from "@/types/stock";
 import { TopStrip } from "./top-strip";
 import { WatchlistSidebar } from "./watchlist-sidebar";
 import { StockHeader } from "./stock-header";
@@ -23,15 +25,22 @@ export function Dashboard() {
   // different value on the prerendered pass vs. hydration, triggering a mismatch.
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("overview");
-  const stock = getStock(selectedSymbol);
+  const baseStock = getStock(selectedSymbol);
+
+  // Fixed "1M" range for the header/technicals overlay — independent from
+  // BoxChart's own range-following poll of the same route (see box-chart.tsx).
+  const { live, error, lastFetchedAt } = useLiveQuote(selectedSymbol, "1M");
+  const stock: Stock = live ? { ...baseStock, ...live } : baseStock;
+  const isStale = error !== null;
 
   useEffect(() => {
-    setLastSync(new Date());
-  }, []);
+    if (lastFetchedAt) setLastSync(lastFetchedAt);
+    else setLastSync((prev) => prev ?? new Date());
+  }, [lastFetchedAt]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <TopStrip onSelect={setSelectedSymbol} lastSync={lastSync} />
+      <TopStrip onSelect={setSelectedSymbol} lastSync={lastSync} isStale={isStale} />
 
       {/* Mobile/tablet section switcher — the 3-pane layout only fits on large screens */}
       <div className="flex shrink-0 gap-1 border-b border-border bg-card px-1.5 py-1.5 lg:hidden">

@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Stock } from "@/types/stock";
 import { Panel } from "./panel";
 import { cn } from "@/lib/utils";
 import { fmtInt, fmtTimeIST } from "@/lib/format";
+import { computeVerdict } from "@/lib/risk-verdict-engine";
 
 export function BoxVerdict({ stock }: { stock: Stock }) {
   const [subscribed, setSubscribed] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState("");
+  const computed = useMemo(() => computeVerdict(stock), [stock]);
 
   const verdictBg =
-    stock.verdict === "Bullish" ? "bg-gradient-to-br from-pos-dim to-[#f0faf3]" :
-    stock.verdict === "Bearish" ? "bg-gradient-to-br from-neg-dim to-[#fdf1f0]" :
+    computed.verdict === "Bullish" ? "bg-gradient-to-br from-pos-dim to-[#f0faf3]" :
+    computed.verdict === "Bearish" ? "bg-gradient-to-br from-neg-dim to-[#fdf1f0]" :
     "bg-gradient-to-br from-amber-dim to-[#fef8ec]";
 
   return (
@@ -23,20 +25,20 @@ export function BoxVerdict({ stock }: { stock: Stock }) {
           <span
             className={cn(
               "rounded-[3px] px-2 py-[3px] text-[11px] font-extrabold uppercase tracking-wide text-white",
-              stock.verdict === "Bullish" && "bg-pos",
-              stock.verdict === "Bearish" && "bg-neg",
-              stock.verdict === "Neutral" && "bg-amber"
+              computed.verdict === "Bullish" && "bg-pos",
+              computed.verdict === "Bearish" && "bg-neg",
+              computed.verdict === "Neutral" && "bg-amber"
             )}
           >
-            {stock.verdict}
+            {computed.verdict}
           </span>
           <span className="text-[9px] text-text3">Rule-based · updated {fmtTimeIST(stock.verdictUpdatedAt)} IST</span>
         </div>
-        <div className="text-[10px] leading-snug text-text2">{stock.verdictReason}</div>
+        <div className="text-[10px] leading-snug text-text2">{computed.reason}</div>
         <div className="flex gap-px overflow-hidden rounded-[3px] border border-border bg-border">
-          <VerdictNum label="Entry" value={stock.entry} color="var(--primary)" />
-          <VerdictNum label="Stop-Loss" value={stock.stopLoss} color="var(--neg)" />
-          <VerdictNum label="Target" value={stock.target} color="var(--pos)" />
+          <VerdictNum label="Entry" value={computed.entry} color="var(--primary)" />
+          <VerdictNum label="Stop-Loss" value={computed.stopLoss} color="var(--neg)" />
+          <VerdictNum label="Target" value={computed.target} color="var(--pos)" />
         </div>
       </div>
 

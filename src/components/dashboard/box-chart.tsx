@@ -6,12 +6,16 @@ import { Panel } from "./panel";
 import { TableModal } from "./table-modal";
 import { cn } from "@/lib/utils";
 import { fmtNum } from "@/lib/format";
+import { useLiveQuote, type ChartRangeKey } from "@/lib/use-live-quote";
+import type { OhlcvBar } from "@/lib/yahoo-finance";
 
-const RANGES = ["1D", "1M", "6M", "1Y", "5Y"] as const;
+const RANGES: ChartRangeKey[] = ["1D", "1M", "6M", "1Y", "5Y"];
 type Candle = { up: boolean; hi: number; lo: number; open: number; close: number };
 
-// Deterministic pseudo-random candles seeded from the stock symbol so each
-// stock renders a distinct, stable chart shape without a real price feed.
+// Deterministic pseudo-random candles seeded from the stock symbol — used as
+// a fallback when real data isn't available yet (cold-start fetch failure,
+// or the "1D" tab, which intentionally stays on placeholder data since a
+// daily-bar endpoint can't produce a useful intraday view).
 function seededCandles(symbol: string, count: number): Candle[] {
   let seed = 0;
   for (let i = 0; i < symbol.length; i++) seed = (seed * 31 + symbol.charCodeAt(i)) % 100000;
@@ -34,6 +38,10 @@ function seededCandles(symbol: string, count: number): Candle[] {
   return candles;
 }
 
+function barsToCandles(bars: OhlcvBar[]): Candle[] {
+  return bars.map((b) => ({ up: b.close >= b.open, hi: b.high, lo: b.low, open: b.open, close: b.close }));
+}
+
 function smooth(values: number[], alpha: number): number[] {
   const out: number[] = [];
   let prev = values[0];
@@ -45,27 +53,45 @@ function smooth(values: number[], alpha: number): number[] {
 }
 
 export function BoxChart({ stock }: { stock: Stock }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
+  const [range, setRange] = useState<ChartRangeKey>("1M");
   const [expanded, setExpanded] = useState(false);
-  const candles = useMemo(() => seededCandles(`${stock.symbol}-${range}`, 30), [stock.symbol, range]);
+  const isPlaceholderRange = range === "1D";
+
+  // Real OHLCV for 1M/6M/1Y/5Y; "1D" intentionally stays on placeholder data
+  // since a daily-bar endpoint can't produce a useful intraday candle view —
+  // disabled so no network call fires for that tab.
+  const { bars, loading } = useLiveQuote(stock.symbol, range, !isPlaceholderRange);
+  const fallback = useMemo(() => seededCandles(`${stock.symbol}-${range}`, 30), [stock.symbol, range]);
+
+  const candles = useMemo(() => {
+    if (isPlaceholderRange) return fallback;
+    if (bars.length > 0) return barsToCandles(bars);
+    return fallback; // cold-start: no successful fetch yet for this symbol/range
+  }, [isPlaceholderRange, bars, fallback]);
 
   return (
     <>
       <Panel title="Price Chart · Daily" tag="EMA 20/50" tagClassName="bg-amber-dim text-[#B57500]" onExpand={() => setExpanded(true)} noBodyPad>
         <div className="flex h-full min-h-0 flex-col px-1.5 pt-1">
           <RangeTabs range={range} onChange={setRange} />
+          {isPlaceholderRange && (
+            <div className="px-1 pb-1 text-[9px] text-text3">Intraday view — placeholder data</div>
+          )}
           <div className="relative min-h-[120px] flex-1">
-            <CandleChart candles={candles} />
+            <CandleChart candles={candles} loading={!isPlaceholderRange && loading && bars.length === 0} />
           </div>
         </div>
       </Panel>
 
       <TableModal open={expanded} onOpenChange={setExpanded} title="Price Chart · Daily" subtitle={`${stock.symbol} · ${stock.name}`} tag="EMA 20/50">
         <RangeTabs range={range} onChange={setRange} large />
+        {isPlaceholderRange && (
+          <div className="pb-1 pt-1 text-[9.5px] text-text3">Intraday view — placeholder data (real-time 1D not yet wired)</div>
+        )}
         <div className="relative mt-2 h-[280px]">
-          <CandleChart candles={candles} />
+          <CandleChart candles={candles} loading={!isPlaceholderRange && loading && bars.length === 0} />
         </div>
-        <OhlcSummary candles={candles} cmp={stock.cmp} />
+        <OhlcSummary candles={candles} />
       </TableModal>
     </>
   );
@@ -76,8 +102,8 @@ function RangeTabs({
   onChange,
   large = false,
 }: {
-  range: (typeof RANGES)[number];
-  onChange: (r: (typeof RANGES)[number]) => void;
+  range: ChartRangeKey;
+  onChange: (r: ChartRangeKey) => void;
   large?: boolean;
 }) {
   return (
@@ -99,16 +125,21 @@ function RangeTabs({
   );
 }
 
-function CandleChart({ candles }: { candles: Candle[] }) {
+function CandleChart({ candles, loading = false }: { candles: Candle[]; loading?: boolean }) {
   const w = 400;
   const h = 130;
   const step = w / candles.length;
-  const scaleY = (v: number) => h - (v / 100) * h;
+  const domainMin = Math.min(...candles.map((c) => c.lo));
+  const domainMax = Math.max(...candles.map((c) => c.hi));
+  const domainRange = domainMax - domainMin || 1;
+  // Real bars are in actual rupee units (unlike the old fake 0-100 scale), so
+  // the Y domain must track the current batch's real price range.
+  const scaleY = (v: number) => h - ((v - domainMin) / domainRange) * h;
   const ema20 = useMemo(() => smooth(candles.map((c) => c.close), 0.15), [candles]);
   const ema50 = useMemo(() => smooth(candles.map((c) => c.close), 0.08), [candles]);
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-full w-full">
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("h-full w-full", loading && "opacity-50")}>
       {[0.15, 0.38, 0.62, 0.85].map((f) => (
         <line key={f} x1={0} y1={h * f} x2={w} y2={h * f} stroke="#F0F1F3" strokeWidth={1} />
       ))}
@@ -143,20 +174,15 @@ function CandleChart({ candles }: { candles: Candle[] }) {
   );
 }
 
-function OhlcSummary({ candles, cmp }: { candles: Candle[]; cmp: number }) {
-  // Candle values are on an abstract 0-100 scale; rescale to the stock's actual CMP band for a realistic OHLC read.
+function OhlcSummary({ candles }: { candles: Candle[] }) {
   const closes = candles.map((c) => c.close);
   const highs = candles.map((c) => c.hi);
   const lows = candles.map((c) => c.lo);
-  const scaleMax = Math.max(...highs);
-  const scaleMin = Math.min(...lows);
-  const scaleRange = scaleMax - scaleMin || 1;
-  const toPrice = (v: number) => cmp * (0.85 + ((v - scaleMin) / scaleRange) * 0.3);
 
-  const periodHigh = toPrice(Math.max(...highs));
-  const periodLow = toPrice(Math.min(...lows));
-  const open = toPrice(candles[0].open);
-  const close = toPrice(closes.at(-1)!);
+  const periodHigh = Math.max(...highs);
+  const periodLow = Math.min(...lows);
+  const open = candles[0].open;
+  const close = closes.at(-1)!;
   const upDays = candles.filter((c) => c.up).length;
 
   return (

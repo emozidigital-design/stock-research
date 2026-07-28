@@ -10,9 +10,11 @@ import type { Stock } from "@/types/stock";
 export function TopStrip({
   onSelect,
   lastSync,
+  isStale = false,
 }: {
   onSelect: (symbol: string) => void;
   lastSync: Date | null;
+  isStale?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -107,9 +109,18 @@ export function TopStrip({
           <div className="hidden whitespace-nowrap text-right text-[10.5px] leading-tight text-text2 xs:block">
             {lastSync ? (
               <>
-                Last sync <b className="font-semibold text-foreground">{fmtTimeIST(lastSync.toISOString())} IST</b>
+                <span className="inline-flex items-center gap-1">
+                  Last sync <b className="font-semibold text-foreground">{fmtTimeIST(lastSync.toISOString())} IST</b>
+                  {isStale && (
+                    <span
+                      className="h-[6px] w-[6px] rounded-full bg-amber"
+                      title="Live data fetch failed — showing last-known values"
+                    />
+                  )}
+                </span>
                 <br />
                 {lastSync.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                {isStale && <span className="text-amber"> · stale</span>}
               </>
             ) : (
               <>

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { stocks } from "@/lib/mock-data";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { computeRiskFlags, computeVerdict } from "@/lib/risk-verdict-engine";
+import type { Verdict } from "@/types/stock";
 
 type FilterKey = "all" | "fo" | "flagged";
 
@@ -17,12 +19,24 @@ export function WatchlistSidebar({
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sortDesc, setSortDesc] = useState(true);
 
+  const riskBySymbol = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const s of stocks) map.set(s.symbol, computeRiskFlags(s).some((r) => r.severity !== "low"));
+    return map;
+  }, []);
+
+  const verdictBySymbol = useMemo(() => {
+    const map = new Map<string, Verdict>();
+    for (const s of stocks) map.set(s.symbol, computeVerdict(s).verdict);
+    return map;
+  }, []);
+
   const filtered = useMemo(() => {
     let list = stocks;
     if (filter === "fo") list = list.filter((s) => s.isFo);
-    if (filter === "flagged") list = list.filter((s) => s.riskFlags.some((r) => r.severity !== "low") || s.news.length > 0);
+    if (filter === "flagged") list = list.filter((s) => riskBySymbol.get(s.symbol) || s.news.length > 0);
     return [...list].sort((a, b) => (sortDesc ? b.changePct - a.changePct : a.changePct - b.changePct));
-  }, [filter, sortDesc]);
+  }, [filter, sortDesc, riskBySymbol]);
 
   return (
     <div className="flex flex-col overflow-hidden rounded-[4px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
@@ -61,38 +75,48 @@ export function WatchlistSidebar({
       <div className="flex-1 overflow-y-auto">
         {filtered.map((s) => {
           const hasNews = s.news.length > 0;
-          const hasRisk = s.riskFlags.some((r) => r.severity !== "low");
+          const hasRisk = riskBySymbol.get(s.symbol) ?? false;
+          const verdict = verdictBySymbol.get(s.symbol) ?? "Neutral";
           const active = s.symbol === selectedSymbol;
           return (
-            <div key={s.symbol}>
-              <div
-                onClick={() => onSelect(s.symbol)}
+            <div key={s.symbol} className="flex">
+              <span
                 className={cn(
-                  "grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-1.5 border-b border-border px-2 py-1.5",
-                  active ? "border-l-2 border-l-primary bg-accent pl-[7px]" : "hover:bg-background"
+                  "w-[3px] shrink-0",
+                  verdict === "Bullish" ? "bg-pos" : verdict === "Bearish" ? "bg-neg" : "bg-amber"
                 )}
-              >
-                <div className="flex flex-col gap-px">
-                  <span className="text-[11.5px] font-bold">{s.symbol}</span>
-                  <span className="text-[9px] font-medium text-text3">{s.sector}</span>
-                </div>
-                <span className="tnum text-right text-[11.5px] font-semibold">{fmtNum(s.cmp)}</span>
-                <span
+                title={`Verdict: ${verdict}`}
+              />
+              <div className="flex-1">
+                <div
+                  onClick={() => onSelect(s.symbol)}
                   className={cn(
-                    "tnum min-w-[56px] rounded-[3px] px-[5px] py-px text-center text-[10px] font-bold",
-                    s.changePct >= 0 ? "bg-pos-dim text-pos" : "bg-neg-dim text-neg"
+                    "grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-1.5 border-b border-border px-2 py-1.5",
+                    active ? "bg-accent" : "hover:bg-background"
                   )}
                 >
-                  {fmtPct(s.changePct)}
-                </span>
-              </div>
-              {(hasNews || s.isFo || hasRisk) && (
-                <div className="flex gap-[3px] px-2 pb-1">
-                  {hasNews && <span className="h-[5px] w-[5px] rounded-full bg-primary" title="News" />}
-                  {hasRisk && <span className="h-[5px] w-[5px] rounded-full bg-neg" title="Risk flag" />}
-                  {s.isFo && <span className="h-[5px] w-[5px] rounded-full bg-amber" title="F&O active" />}
+                  <div className="flex flex-col gap-px">
+                    <span className="text-[11.5px] font-bold">{s.symbol}</span>
+                    <span className="text-[9px] font-medium text-text3">{s.sector}</span>
+                  </div>
+                  <span className="tnum text-right text-[11.5px] font-semibold">{fmtNum(s.cmp)}</span>
+                  <span
+                    className={cn(
+                      "tnum min-w-[56px] rounded-[3px] px-[5px] py-px text-center text-[10px] font-bold",
+                      s.changePct >= 0 ? "bg-pos-dim text-pos" : "bg-neg-dim text-neg"
+                    )}
+                  >
+                    {fmtPct(s.changePct)}
+                  </span>
                 </div>
-              )}
+                {(hasNews || s.isFo || hasRisk) && (
+                  <div className="flex gap-[3px] px-2 pb-1">
+                    {hasNews && <span className="h-[5px] w-[5px] rounded-full bg-primary" title="News" />}
+                    {hasRisk && <span className="h-[5px] w-[5px] rounded-full bg-neg" title="Risk flag" />}
+                    {s.isFo && <span className="h-[5px] w-[5px] rounded-full bg-amber" title="F&O active" />}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}

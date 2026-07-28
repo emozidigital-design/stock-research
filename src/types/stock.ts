@@ -30,6 +30,8 @@ export interface RiskFlag {
   detail: string;
 }
 
+/** Note: PRD §3.2's risk matrix also wants probability/impact — computed by the rule engine (see risk-verdict-engine.ts), not stored on the mock Stock type. */
+
 export type BrokerRating = "buy" | "hold" | "sell";
 
 export interface BrokerCall {
