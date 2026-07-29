@@ -12,7 +12,18 @@ const TABS = ["Shareholding", "Bulk/Block"] as const;
 export function BoxOwnership({ stock }: { stock: Stock }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Shareholding");
   const [expanded, setExpanded] = useState(false);
-  const latest = stock.ownershipTrend.at(-1)!;
+  const latest = stock.ownershipTrend.at(-1);
+
+  if (!latest) {
+    return (
+      <Panel title="Ownership & Corporate Actions">
+        <div className="flex h-full items-center justify-center text-center text-[10.5px] text-text3">
+          No ownership data available.
+        </div>
+      </Panel>
+    );
+  }
+
   const prev = stock.ownershipTrend.at(-3) ?? latest;
   const fiiDelta = +(latest.fii - prev.fii).toFixed(1);
   const diiDelta = +(latest.dii - prev.dii).toFixed(1);

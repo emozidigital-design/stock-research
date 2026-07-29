@@ -9,21 +9,24 @@ const POLL_MS = 45_000;
 /**
  * Polls /api/market-data/batch for the whole watchlist (price/%chg only —
  * mirrors use-live-quote.ts's "live wins, last-known-good is the fallback"
- * pattern, keyed by symbol instead of a single stock).
+ * pattern, keyed by symbol instead of a single stock). Pass extraSymbols for
+ * user-added (non-hardcoded) stocks to include in the same batch/poll.
  */
-export function useLiveWatchlist() {
+export function useLiveWatchlist(extraSymbols: string[] = []) {
   const [quotes, setQuotes] = useState<Map<string, BatchQuote>>(new Map());
   const inFlight = useRef(false);
+  const extraKey = extraSymbols.join(",");
 
   useEffect(() => {
     let cancelled = false;
+    const query = extraKey ? `?symbols=${encodeURIComponent(extraKey)}` : "";
 
     async function poll() {
       if (inFlight.current) return;
       if (document.visibilityState === "hidden") return;
       inFlight.current = true;
       try {
-        const res = await fetch("/api/market-data/batch");
+        const res = await fetch(`/api/market-data/batch${query}`);
         if (!res.ok) throw new Error(`status ${res.status}`);
         const json = await res.json();
         if (cancelled) return;
@@ -53,7 +56,7 @@ export function useLiveWatchlist() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [extraKey]);
 
   return quotes;
 }

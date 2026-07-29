@@ -11,20 +11,23 @@ const POLL_MS = 6 * 60 * 60 * 1000; // fundamentals don't move intraday — 6h p
  * use-live-watchlist.ts's map-keyed, last-known-good-on-failure pattern, but
  * with no isMarketOpen() gate — fundamentals are meaningful even when the
  * market's closed, so it polls on its own timer regardless of market hours.
+ * Pass extraSymbols for user-added (non-hardcoded) stocks to include.
  */
-export function useLiveFundamentals() {
+export function useLiveFundamentals(extraSymbols: string[] = []) {
   const [fundamentals, setFundamentals] = useState<Map<string, FundamentalsQuote>>(new Map());
   const inFlight = useRef(false);
+  const extraKey = extraSymbols.join(",");
 
   useEffect(() => {
     let cancelled = false;
+    const query = extraKey ? `?symbols=${encodeURIComponent(extraKey)}` : "";
 
     async function poll() {
       if (inFlight.current) return;
       if (document.visibilityState === "hidden") return;
       inFlight.current = true;
       try {
-        const res = await fetch("/api/fundamentals/batch");
+        const res = await fetch(`/api/fundamentals/batch${query}`);
         if (!res.ok) throw new Error(`status ${res.status}`);
         const json = await res.json();
         if (cancelled) return;
@@ -51,7 +54,7 @@ export function useLiveFundamentals() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [extraKey]);
 
   return fundamentals;
 }

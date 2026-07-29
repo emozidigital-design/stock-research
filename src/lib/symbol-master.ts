@@ -70,3 +70,36 @@ export async function searchSymbols(query: string, limit = 20): Promise<SymbolMa
   }
   return matches;
 }
+
+/**
+ * Filters a candidate symbol list down to ones that actually exist on NSE —
+ * drops garbage rather than erroring, since callers pass user/localStorage-
+ * sourced symbols. If the NSE master fetch itself fails (network blip, rate
+ * limit), candidates pass through unvalidated rather than being dropped —
+ * otherwise a transient NSE outage would silently stop live polling for every
+ * added stock on every batch route poll until the fetch recovers.
+ */
+export async function validateSymbols(candidates: string[]): Promise<string[]> {
+  if (candidates.length === 0) return [];
+  const entries = await fetchSymbolMaster().catch(() => null);
+  if (entries === null) return candidates;
+  const known = new Set(entries.map((e) => e.symbol));
+  return candidates.filter((s) => known.has(s));
+}
+
+/**
+ * Resolves the full symbol list for a batch route: the fixed watchlist plus
+ * validated extra symbols from a `?symbols=` query param. Shared by
+ * market-data/batch and fundamentals/batch so the parsing/validation logic
+ * can't drift between them.
+ */
+export async function resolveBatchSymbols(request: Request, staticSymbols: string[]): Promise<string[]> {
+  const { searchParams } = new URL(request.url);
+  const extraRaw = (searchParams.get("symbols") ?? "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  const staticSet = new Set(staticSymbols);
+  const extra = await validateSymbols(extraRaw.filter((s) => !staticSet.has(s)));
+  return [...staticSymbols, ...extra];
+}

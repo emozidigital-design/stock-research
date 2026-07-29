@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import { indices, stocks } from "@/lib/mock-data";
 import { fmtNum, fmtPct, fmtSigned, fmtTimeIST, isMarketOpen } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ interface SearchResult {
   name: string;
   exchange?: string;
   inWatchlist: boolean;
+  isStatic: boolean;
 }
 
 export function TopStrip({
@@ -18,11 +19,15 @@ export function TopStrip({
   onSelectSearch,
   lastSync,
   isStale = false,
+  isAdded,
+  onAddStock,
 }: {
   onSelect: (symbol: string) => void;
   onSelectSearch: (symbol: string, name: string) => void;
   lastSync: Date | null;
   isStale?: boolean;
+  isAdded: (symbol: string) => boolean;
+  onAddStock: (symbol: string, name: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -38,7 +43,7 @@ export function TopStrip({
     const q = query.trim().toUpperCase();
     return stocks
       .filter((s) => s.symbol.includes(q) || s.name.toUpperCase().includes(q))
-      .map((s) => ({ symbol: s.symbol, name: s.name, exchange: s.exchange, inWatchlist: true }));
+      .map((s) => ({ symbol: s.symbol, name: s.name, exchange: s.exchange, inWatchlist: true, isStatic: true }));
   }, [query]);
 
   // Debounced server search covers the full ~2,400-symbol NSE universe;
@@ -58,7 +63,12 @@ export function TopStrip({
         const watchlistSymbols = new Set(stocks.map((s) => s.symbol));
         const entries: SearchResult[] = (json.results ?? [])
           .filter((r: { symbol: string }) => !watchlistSymbols.has(r.symbol))
-          .map((r: { symbol: string; name: string }) => ({ symbol: r.symbol, name: r.name, inWatchlist: false }));
+          .map((r: { symbol: string; name: string }) => ({
+            symbol: r.symbol,
+            name: r.name,
+            inWatchlist: isAdded(r.symbol),
+            isStatic: false,
+          }));
         setRemoteResults(entries);
       } catch {
         if (!cancelled) setRemoteResults([]);
@@ -68,7 +78,7 @@ export function TopStrip({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, isAdded]);
 
   const results = useMemo<SearchResult[]>(
     () => [...watchlistResults, ...remoteResults].slice(0, 8),
@@ -219,13 +229,35 @@ export function TopStrip({
                       else onSelectSearch(s.symbol, s.name);
                       closeSearch();
                     }}
-                    className="flex cursor-pointer items-center justify-between rounded-[3px] px-2 py-[7px] text-[11px] hover:bg-accent"
+                    className="flex cursor-pointer items-center justify-between gap-2 rounded-[3px] px-2 py-[7px] text-[11px] hover:bg-accent"
                   >
-                    <span>
+                    <span className="min-w-0 truncate">
                       <b className="font-bold">{s.symbol}</b> <span className="text-text3">{s.name}</span>
                     </span>
-                    <span className="rounded-[2px] border border-border px-1 text-[8px] font-bold text-text3">
-                      {s.exchange ?? "NSE"}
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <span className="rounded-[2px] border border-border px-1 text-[8px] font-bold text-text3">
+                        {s.exchange ?? "NSE"}
+                      </span>
+                      {!s.isStatic &&
+                        (s.inWatchlist ? (
+                          <span
+                            className="rounded-[2px] bg-accent px-1 py-px text-[8px] font-bold uppercase tracking-wide text-primary"
+                            title="Already in watchlist"
+                          >
+                            Added
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAddStock(s.symbol, s.name);
+                            }}
+                            title="Add to watchlist"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[2px] border border-border text-text2 hover:border-primary hover:bg-accent hover:text-primary"
+                          >
+                            <Plus className="h-3 w-3" strokeWidth={2.5} />
+                          </button>
+                        ))}
                     </span>
                   </div>
                 ))

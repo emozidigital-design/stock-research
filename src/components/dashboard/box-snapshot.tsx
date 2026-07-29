@@ -48,7 +48,10 @@ export function BoxSnapshot({ stock }: { stock: Stock }) {
             <Stat label="D/E" value={stock.de.toFixed(2)} />
             <Stat label="EPS (TTM)" value={`₹${stock.epsTtm.toFixed(1)}`} />
             <Stat label="Face Value" value={`₹${stock.faceValue}`} />
-            <Stat label="Promoter" value={`${stock.ownershipTrend.at(-1)?.promoter.toFixed(1)}%`} />
+            <Stat
+              label="Promoter"
+              value={stock.ownershipTrend.at(-1) ? `${stock.ownershipTrend.at(-1)!.promoter.toFixed(1)}%` : "—"}
+            />
             <Stat label="Beta (1Y)" value={stock.betaOneYr.toFixed(2)} />
             <Stat label="Credit Rtg" value={stock.creditRating} small />
             <Stat label="CEO" value={stock.ceo} small />
@@ -91,7 +94,10 @@ export function BoxSnapshot({ stock }: { stock: Stock }) {
         <div className="mb-4">
           <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-text2">Ownership & Risk</div>
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[3px] border border-border bg-border sm:grid-cols-4">
-            <ModalStat label="Promoter Holding" value={`${stock.ownershipTrend.at(-1)?.promoter.toFixed(1)}%`} />
+            <ModalStat
+              label="Promoter Holding"
+              value={stock.ownershipTrend.at(-1) ? `${stock.ownershipTrend.at(-1)!.promoter.toFixed(1)}%` : "—"}
+            />
             <ModalStat label="Promoter Pledge" value={`${stock.promoterPledge.toFixed(1)}%`} />
             <ModalStat label="Beta (1Y)" value={stock.betaOneYr.toFixed(2)} />
             <ModalStat label="Credit Rating" value={stock.creditRating} small />

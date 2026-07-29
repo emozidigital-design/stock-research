@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { stocks } from "@/lib/mock-data";
+import { buildBareStock } from "@/lib/bare-stock";
+import type { AddedStock } from "@/lib/use-added-stocks";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { computeRiskFlags, computeVerdict } from "@/lib/risk-verdict-engine";
@@ -14,26 +17,33 @@ type FilterKey = "all" | "fo" | "flagged";
 export function WatchlistSidebar({
   selectedSymbol,
   onSelect,
+  added,
+  onRemoveStock,
 }: {
   selectedSymbol: string;
   onSelect: (symbol: string) => void;
+  added: AddedStock[];
+  onRemoveStock: (symbol: string) => void;
 }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sortDesc, setSortDesc] = useState(true);
-  const liveQuotes = useLiveWatchlist();
-  const liveFundamentals = useLiveFundamentals();
+  const addedSymbols = useMemo(() => added.map((a) => a.symbol), [added]);
+  const liveQuotes = useLiveWatchlist(addedSymbols);
+  const liveFundamentals = useLiveFundamentals(addedSymbols);
 
-  // Live price/%chg and fundamentals win per symbol/field; mock stays the
-  // fallback until the first successful poll lands (mirrors dashboard.tsx's
-  // merge pattern). Fundamentals merge is field-level via mergeFundamentals
-  // so a partial Yahoo response never overwrites a good mock value.
+  // Static watchlist rows + user-added rows (via buildBareStock, same base
+  // used for search previews) share one live-merge pipeline — the merge
+  // logic only cares that quotes/fundamentals are keyed by symbol, not where
+  // the base Stock came from. Live price/%chg and fundamentals win per
+  // symbol/field; mock/bare stays the fallback until the first poll lands.
   const liveStocks = useMemo<Stock[]>(() => {
-    return stocks.map((s) => {
+    const base = [...stocks, ...added.map((a) => buildBareStock(a.symbol, a.name))];
+    return base.map((s) => {
       const live = liveQuotes.get(s.symbol);
       const withPrice = live ? { ...s, cmp: live.cmp, changeAbs: live.changeAbs, changePct: live.changePct } : s;
       return mergeFundamentals(withPrice, liveFundamentals.get(s.symbol));
     });
-  }, [liveQuotes, liveFundamentals]);
+  }, [added, liveQuotes, liveFundamentals]);
 
   const riskBySymbol = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -58,7 +68,7 @@ export function WatchlistSidebar({
     <div className="flex flex-col overflow-hidden rounded-[4px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-panel-head px-2.5 py-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wide text-text2">
-          Watchlist <b className="text-foreground">· {stocks.length}</b>
+          Watchlist <b className="text-foreground">· {stocks.length + added.length}</b>
         </span>
         <span className="rounded-[2px] bg-accent px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-primary">
           F&O
@@ -94,6 +104,7 @@ export function WatchlistSidebar({
           const hasRisk = riskBySymbol.get(s.symbol) ?? false;
           const verdict = verdictBySymbol.get(s.symbol) ?? "Neutral";
           const active = s.symbol === selectedSymbol;
+          const isAddedRow = addedSymbols.includes(s.symbol);
           return (
             <div key={s.symbol} className="flex">
               <span
@@ -107,7 +118,7 @@ export function WatchlistSidebar({
                 <div
                   onClick={() => onSelect(s.symbol)}
                   className={cn(
-                    "grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-1.5 border-b border-border px-2 py-1.5",
+                    "grid cursor-pointer grid-cols-[1fr_auto_auto_auto] items-center gap-1.5 border-b border-border px-2 py-1.5",
                     active ? "bg-accent" : "hover:bg-background"
                   )}
                 >
@@ -124,6 +135,18 @@ export function WatchlistSidebar({
                   >
                     {fmtPct(s.changePct)}
                   </span>
+                  {isAddedRow && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveStock(s.symbol);
+                      }}
+                      title="Remove from watchlist"
+                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] text-text3 hover:bg-neg-dim hover:text-neg"
+                    >
+                      <X className="h-3 w-3" strokeWidth={2.5} />
+                    </button>
+                  )}
                 </div>
                 {(hasNews || s.isFo || hasRisk) && (
                   <div className="flex gap-[3px] px-2 pb-1">
@@ -142,7 +165,7 @@ export function WatchlistSidebar({
         <button onClick={() => setSortDesc((v) => !v)} className="hover:text-foreground">
           Sorted: % Chg {sortDesc ? "▾" : "▴"}
         </button>
-        <span className="cursor-pointer hover:text-foreground">+ Add symbol</span>
+        <span>Search to add a symbol</span>
       </div>
     </div>
   );
